@@ -67,6 +67,9 @@ bsp_version = board.get("build.bsp.version", default_bsp_version)
 softdevice_version = board.get("build.softdevice.sd_version", default_softdevice_version)
 bootloader_version = board.get("build.bootloader.version", default_bootloader_version)
 
+# HACK: get it from boards.txt
+softdevice_version = default_softdevice_version
+
 env.Append(
     ASFLAGS=["-x", "assembler-with-cpp"],
 
@@ -128,8 +131,9 @@ env.Append(
         "-Wl,--unresolved-symbols=report-all",
         "-Wl,--warn-common",
         "-Wl,--warn-section-align",
-        "-Wl,--wrap=malloc",
-        "-Wl,--wrap=free"
+        # add if bsp ver >= 1.3.0
+        "-Wl,--wrap=malloc" if tuple(map(int, (bsp_version.split(".")))) >= tuple(map(int, ("1.3.0".split(".")))) else "",
+        "-Wl,--wrap=free" if tuple(map(int, (bsp_version.split(".")))) >= tuple(map(int, ("1.3.0".split(".")))) else ""
     ],
 
     LIBSOURCE_DIRS=[join(FRAMEWORK_DIR, "libraries")],
@@ -193,6 +197,8 @@ if softdevice_name:
         # Update linker script:
         ldscript_dir = join(CORE_DIR, "linker")
         ldscript_name = board.get("build.arduino.ldscript", "")
+        # HACK: force ldscript
+        ldscript_name = "nrf52840_s140_v7.ld"
         if ldscript_name:
             env.Append(LIBPATH=[ldscript_dir])
             env.Replace(LDSCRIPT_PATH=ldscript_name)
@@ -242,6 +248,114 @@ if "build.usb_product" in env.BoardConfig():
         ]
     )
 
+openthread_config = '\\\"openthread-config-wrap.h\\\"'
+mbedtls_config = '\\\"nrf-config.h\\\"'
+mbedtls_user_config = '\\\"nrf52840-mbedtls-config.h\\\"'
+
+libnrf_cc310_path = join(NORDIC_DIR, "external", "nrf_security", "lib")
+libopenthread_path = join(NORDIC_DIR, "external",
+                          "openthread", "lib", "nrf52840", "gcc")
+
+if isdir(libopenthread_path):
+    print("DABAG: APPENDING OPENTHREAD")
+    env.Append(
+        CCFLAGS=[
+            "-Werror=return-type"
+        ],
+        CPPDEFINES=[
+            ("OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE",  1),
+            ("OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_CHILD_SUPERVISION_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_COAP_API_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_COMMISSIONER_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_DHCP6_CLIENT_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_DHCP6_SERVER_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_DIAG_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_ECDSA_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_ENABLE_BUILTIN_MBEDTLS", 0),
+            ("OPENTHREAD_CONFIG_HEAP_EXTERNAL_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_JAM_DETECTION_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_JOINER_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_LINK_RAW_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_MAC_FILTER_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_NCP_UART_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_THREAD_VERSION", 2),
+            ("OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_TMF_NETWORK_DIAG_MTD_ENABLE", 1),
+            ("OPENTHREAD_CONFIG_UDP_FORWARD_ENABLE", 1),
+            ("OPENTHREAD_ENABLE_NCP_SPINEL_ENCRYPTER", 0),
+            ("OPENTHREAD_ENABLE_VENDOR_EXTENSION", 0),
+            ("OPENTHREAD_EXAMPLES_SIMULATION",  0),
+            ("OPENTHREAD_FTD",  1),
+            ("OPENTHREAD_MTD", 0),
+            ("OPENTHREAD_PLATFORM_POSIX", 0),
+            ("OPENTHREAD_POSIX_CONFIG_DAEMON_ENABLE", 0),
+            ("OPENTHREAD_RADIO", 0),
+            ("MBEDTLS_CONFIG_FILE", mbedtls_config),
+            ("MBEDTLS_USER_CONFIG_FILE", mbedtls_user_config),
+            ("OPENTHREAD_CONFIG_FILE", openthread_config),
+            ("MBEDTLS_USER_CONFIG_FILE", mbedtls_user_config),
+            "CONFIG_GPIO_AS_PINRESET",
+            ("__HEAP_SIZE", 8192),
+            ("__STACK_SIZE", 8192),
+            "FREERTOS",
+            "NRF52840_XXAA",
+        ],
+        CPPPATH=[
+            join(NORDIC_DIR, "config", "nrf52840", "config"),
+            join(NORDIC_DIR, "softdevice", "common"),
+            join(NORDIC_DIR, "softdevice", "s140_nrf52_7.0.1_API", "include"),
+            join(NORDIC_DIR, "softdevice",
+                 "s140_nrf52_7.0.1_API", "include", "nrf52"),
+            join(NORDIC_DIR, "nrfx"),
+            join(NORDIC_DIR, "nrfx", "legacy"),
+            join(NORDIC_DIR, "nrfx", "drivers", "include"),
+            join(NORDIC_DIR, "nrfx", "hal"),
+            join(NORDIC_DIR, "nrfx", "mdk"),
+            join(NORDIC_DIR, "components", "libraries",
+                 "experimental_section_vars"),
+            join(NORDIC_DIR, "components", "libraries", "log"),
+            join(NORDIC_DIR, "components", "libraries", "strerror"),
+            join(NORDIC_DIR, "components", "libraries", "util"),
+            join(NORDIC_DIR, "external", "nRF-IEEE-802.15.4-radio-driver", "src"),
+            join(NORDIC_DIR, "external",
+                 "nRF-IEEE-802.15.4-radio-driver", "src", "fem"),
+            join(NORDIC_DIR, "external", "nRF-IEEE-802.15.4-radio-driver",
+                 "src", "fem", "three_pin_gpio"),
+            join(NORDIC_DIR, "external", "nRF-IEEE-802.15.4-radio-driver",
+                 "src", "rsch", "raal", "softdevice"),
+            join(NORDIC_DIR, "external", "nrf_security", "config"),
+            join(NORDIC_DIR, "external", "nrf_security", "include"),
+            join(NORDIC_DIR, "external", "nrf_security", "mbedtls_plat_config"),
+            join(NORDIC_DIR, "external", "nrf_security",
+                 "nrf_cc310_plat", "include"),
+            join(NORDIC_DIR, "external", "openthread", "include"),
+        ],
+        LIBPATH=[
+            libnrf_cc310_path,
+            libopenthread_path
+        ],
+        LIBS=[
+            "mbedcrypto_cc310_backend",
+            "mbedcrypto_glue",
+            "mbedcrypto_glue_cc310",
+            "mbedcrypto_glue_vanilla",
+            "mbedcrypto_vanilla_backend",
+            "mbedtls_base_vanilla",
+            "mbedtls_tls_vanilla",
+            "mbedtls_x509_vanilla",
+            "nrf_cc310_platform_0.9.2",
+            "openthread-cli-ftd",
+            "openthread-ftd",
+            "openthread-platform-utils",
+            "openthread-nrf52840-softdevice-sdk",
+            "nordicsemi-nrf52840-radio-driver-softdevice",
+        ]
+    )
 
 env.Append(
     CPPPATH=[
